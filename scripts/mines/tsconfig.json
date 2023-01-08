@@ -2,7 +2,7 @@
     "compilerOptions": {
         "composite": true,
         "declaration": true,
-        "target": "ES5",
+        "target": "ES6",
         "rootDir": "src",
         "outDir": "build"
     },
