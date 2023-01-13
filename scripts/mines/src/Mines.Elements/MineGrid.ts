@@ -1,6 +1,7 @@
 import { IMineGrid } from "../Mines.Annotations/IMineGrid"
 import { MineData } from "../Mines.Annotations/MineData";
 import { MineGridStatus } from "../Mines.Annotations/MineGridStatus";
+import { MineGridStatusError } from "../Mines.Annotations/MineGridStatusError"
 import { MineMark } from "../Mines.Annotations/MineMark";
 import { Algorithms } from "./Algorithms";
 import { TileMark } from "./TileMark";
@@ -20,7 +21,7 @@ export class MineGrid implements IMineGrid {
 
     private step = MineGridStatus.None
 
-    private back: number[] = null
+    private back: ReadonlyArray<number> = null
 
     private miss = -1
 
@@ -91,6 +92,34 @@ export class MineGrid implements IMineGrid {
         // TODO: 触发状态更改事件
     }
 
+    private remove(x: number, y: number): number {
+        let adjacent = (a: number, b: number) => Algorithms.adjacent(this.w, this.h, a, b)
+        let o = new Array<[number, number]>([x, y])
+        let c = new Set<[number, number]>()
+        var n = 0
+        while (o.length > 0) {
+            let p = o.pop()
+            if (!c.has(p)) {
+                c.add(p)
+                let [a, b] = p
+                let i = this.flatten(a, b)
+                if (this.face[i] == TileMark.Tile) {
+                    this.face[i] = TileMark.None
+                    n += 1
+                    switch (this.back[i]) {
+                        case 0: Array.from(adjacent(a, b)).forEach(k => o.push(k)); break
+                        case this.Mine: this.miss = i; break
+                    }
+                }
+            }
+        }
+        return n
+    }
+
+    private fail() {
+        throw new MineGridStatusError(`Can not operate now, status: ${this.step}`)
+    }
+
     get Status(): MineGridStatus {
         return this.step
     }
@@ -116,14 +145,61 @@ export class MineGrid implements IMineGrid {
     }
 
     Get(x: number, y: number): MineData {
-        throw new Error("Method not implemented.");
+        let i = this.flatten(x, y)
+        let b = this.back == null ? -1 : this.back[i]
+        let m = b == this.Mine
+        let f = this.step == MineGridStatus.Over
+        switch (this.face[i]) {
+            case TileMark.Tile: return f && m ? MineData.Mine : MineData.Tile;
+            case TileMark.Flag: return f && !m ? MineData.FlagMiss : MineData.Flag;
+            case TileMark.What: return f && !m ? MineData.WhatMiss : MineData.What;
+            default: i == this.miss ? MineData.MineMiss : (m ? MineData.Mine : MineData[b]);
+        }
     }
 
     Set(x: number, y: number, mark: MineMark): void {
-        throw new Error("Method not implemented.");
+        let convert = (mark: MineMark) => {
+            switch (mark) {
+                case MineMark.None: return TileMark.Tile;
+                case MineMark.Flag: return TileMark.Flag
+                case MineMark.What: return TileMark.What
+                default: throw new Error("Invalid mine mark!")
+            }
+        }
+
+        if (this.step != MineGridStatus.None && this.step != MineGridStatus.Wait)
+            this.fail()
+        let t = convert(mark)
+        let i = this.flatten(x, y)
+        let s = this.face[i]
+        if (s != t) {
+            this.code += 1
+            this.face[i] = t
+            if (s == TileMark.Flag) {
+                this.flag -= 1
+            } else if (t == TileMark.Flag) {
+                this.flag += 1
+            }
+        }
     }
 
     Remove(x: number, y: number): void {
-        throw new Error("Method not implemented.");
+        if (this.step == MineGridStatus.None) {
+            this.back = this.generate(x, y)
+            this.update(MineGridStatus.Wait)
+        } else if (this.step != MineGridStatus.Wait) {
+            this.fail()
+        }
+
+        let n = this.remove(x, y)
+        if (n != 0) {
+            this.code += 1
+            this.tile -= n
+            if (this.miss != -1) {
+                this.update(MineGridStatus.Over)
+            } else if (this.tile == this.count) {
+                this.update(MineGridStatus.Done)
+            }
+        }
     }
 }
